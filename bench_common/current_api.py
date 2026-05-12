@@ -87,8 +87,8 @@ def get_by_dotted_path(data: dict[str, Any], path: str | None, default: Any = No
 def coalesce_float(data: dict[str, Any] | None, *fields: str) -> float | None:
     if not isinstance(data, dict):
         return None
-    for field in fields:
-        value = data.get(field)
+    for field_name in fields:
+        value = data.get(field_name)
         if value is None or value == "":
             continue
         try:

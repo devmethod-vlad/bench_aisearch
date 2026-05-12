@@ -1,26 +1,46 @@
 # bench_aisearch
 
-Бенчмарки для `devmethod-vlad/aisearch` (текущий API):
-- `python -m metrics.metrics_bench` — замер latency и API-метрик.
-- `python -m quality.quality_bench` — качество выдачи (recall@k, MRR@k, nDCG@k).
+Два независимых бенчмарка для `devmethod-vlad/aisearch`:
+- `metrics` — замер latency и API-метрик.
+- `quality` — оценка качества выдачи (recall@k, MRR@k, nDCG@k, rank, not_found).
 
-Общая работа с API вынесена в `bench_common/current_api.py`.
+Общий клиент текущего API: `bench_common/current_api.py`.
 
-## Быстрый старт
+## Подготовка env
 
-1. Установите зависимости (`pandas`, `requests`, `python-dotenv`, `tqdm`, `rich`, и т.д. по `pyproject.toml`).
-2. Скопируйте пример окружения:
-   ```bash
-   cp .env.benchmark.example .env_metrics
-   cp .env.benchmark.example .env_quality
-   ```
-3. Настройте переменные под ваш стенд и данные.
+У каждого бенчмарка свой env-файл:
+- metrics: `.env_metrics` (пример: `.env_metrics.example`)
+- quality: `.env_quality` (пример: `.env_quality.example`)
+
+```bash
+cp .env_metrics.example .env_metrics
+cp .env_quality.example .env_quality
+```
 
 ## Запуск
 
+Metrics benchmark:
+
 ```bash
 python -m metrics.metrics_bench
+```
+
+Quality benchmark:
+
+```bash
 python -m quality.quality_bench
 ```
 
-Подробности по контракту API и всем env-переменным: `docs/current_aisearch_api.md`.
+## Переопределение dotenv-файла
+
+```bash
+DOTENV_PATH=.env_metrics.local python -m metrics.metrics_bench
+DOTENV_PATH=.env_quality.local python -m quality.quality_bench
+```
+
+## Отличия входных данных
+
+- Metrics benchmark: либо `SOURCE_FILE` + `SOURCE_FILE_QUERY_FIELD`, либо `TEST_QUERY` + `TEST_QUERY_RETRY_COUNT`.
+- Quality benchmark: обязателен `TEST_DATA_PATH` и колонки `COL_QUERY` / `COL_TARGET_ID` / `COL_SOURCE`.
+
+Детальный контракт API и полный список переменных: `docs/current_aisearch_api.md`.
