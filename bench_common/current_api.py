@@ -32,7 +32,16 @@ def env_bool(name: str, default: bool) -> bool:
     raw = os.getenv(name)
     if raw is None or raw == "":
         return default
-    return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+    normalized = raw.strip().lower()
+    truthy = {"1", "true", "yes", "y", "on"}
+    falsy = {"0", "false", "no", "n", "off"}
+    if normalized in truthy:
+        return True
+    if normalized in falsy:
+        return False
+    raise BenchmarkApiError(
+        f"{name} должен быть bool (true/false, 1/0, yes/no, y/n, on/off), получено: {raw!r}"
+    )
 
 
 def env_int(name: str, default: int) -> int:
@@ -52,7 +61,15 @@ def env_json(name: str, default: Any = None) -> Any:
     try:
         return json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise BenchmarkApiError(f"{name} должен быть валидным JSON: {raw!r}") from exc
+        raise BenchmarkApiError(f"{name} должен быть валидным JSON: {exc.msg} (pos={exc.pos})") from exc
+
+
+def env_csv_list(name: str) -> list[str]:
+    raw = os.getenv(name)
+    if raw in (None, ""):
+        return []
+    values = [part.strip() for part in raw.replace(";", ",").split(",")]
+    return [value for value in values if value]
 
 
 def get_by_dotted_path(data: dict[str, Any], path: str | None, default: Any = None) -> Any:
@@ -142,6 +159,41 @@ class SearchApiConfig:
 
         inwork = os.getenv("API_STATUS_INWORK_STATUS_VALUE", "queued,running")
         fail = os.getenv("API_STATUS_FAIL_STATUS_VALUE", "failed,not_found")
+        presearch = env_json("API_PRESEARCH_JSON", None)
+        if presearch is None and env_bool("API_PRESEARCH_ENABLED", False):
+            presearch_field = (os.getenv("API_PRESEARCH_FIELD") or "").strip()
+            if not presearch_field:
+                raise BenchmarkApiError("API_PRESEARCH_ENABLED=true требует непустой API_PRESEARCH_FIELD")
+            presearch = {"field": presearch_field}
+
+        filters = env_json("API_FILTERS_JSON", None)
+        if filters is None:
+            array_filters: dict[str, list[str]] = {}
+            exact_filters: dict[str, str] = {}
+            role_values = env_csv_list("API_FILTER_ARRAY_ROLE")
+            product_values = env_csv_list("API_FILTER_ARRAY_PRODUCT")
+            component_values = env_csv_list("API_FILTER_ARRAY_COMPONENT")
+            if role_values:
+                array_filters["role"] = role_values
+            if product_values:
+                array_filters["product"] = product_values
+            if component_values:
+                array_filters["component"] = component_values
+            for field, env_name in (
+                ("source", "API_FILTER_EXACT_SOURCE"),
+                ("actual", "API_FILTER_EXACT_ACTUAL"),
+                ("second_line", "API_FILTER_EXACT_SECOND_LINE"),
+            ):
+                value = (os.getenv(env_name) or "").strip()
+                if value:
+                    exact_filters[field] = value
+            if array_filters or exact_filters:
+                filters = {}
+                if array_filters:
+                    filters["array_filters"] = array_filters
+                if exact_filters:
+                    filters["exact_filters"] = exact_filters
+
         return cls(
             base_url=base_url,
             search_path=search_path,
@@ -156,8 +208,8 @@ class SearchApiConfig:
             search_use_cache=env_bool("API_SEARCH_USE_CACHE", False),
             metrics_enable=env_bool("API_METRICS_ENABLE", True),
             show_intermediate_results=env_bool("API_SHOW_INTERMEDIATE_RESULTS", default_intermediate),
-            presearch=env_json("API_PRESEARCH_JSON", None),
-            filters=env_json("API_FILTERS_JSON", None),
+            presearch=presearch,
+            filters=filters,
             done_status=os.getenv("API_STATUS_STATUS_OK_VALUE", "done"),
             inwork_statuses={s.strip() for s in inwork.split(",") if s.strip()},
             fail_statuses={s.strip() for s in fail.split(",") if s.strip()},
