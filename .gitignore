@@ -1,0 +1,16 @@
+node_modules
+logs
+volumes
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.env
+venv
+__pycache__
