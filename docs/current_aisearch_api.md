@@ -1,97 +1,85 @@
-# Бенчмарки под текущий aisearch
+# Бенчмарки под текущий aisearch API
 
-Добавлены новые скрипты рядом со старыми, чтобы не ломать существующие сценарии:
+В репозитории используется единый актуальный набор скриптов:
 
-- `metrics/metrics_bench_current.py` — замер времени и API-метрик.
-- `quality/quality_bench_current.py` — оценка качества выдачи.
-- `bench_common/current_api.py` — общий клиент для `POST /hybrid-search/search` и `GET /hybrid-search/info/{task_id}`.
+- `metrics/metrics_bench.py`
+- `quality/quality_bench.py`
+- `bench_common/current_api.py`
 
-## Что изменилось в контракте aisearch
+Запуск:
 
-Текущий `aisearch` принимает runtime-параметры в теле поискового запроса:
+```bash
+python -m metrics.metrics_bench
+python -m quality.quality_bench
+```
 
+## SearchRequest
+
+`POST /hybrid-search/search` отправляется с обязательными полями:
+- `query`
+- `top_k`
 - `search_use_cache`
 - `metrics_enable`
 - `show_intermediate_results`
+
+Дополнительно (если заданы):
 - `presearch`
 - `filters`
 
-Поэтому новые скрипты отправляют эти поля явно. Для честного замера времени по умолчанию cache выключен, метрики включены.
+### Управление через env
 
-## Основные переменные окружения
+Базовые флаги:
+- `API_SEARCH_USE_CACHE` (bool)
+- `API_METRICS_ENABLE` (bool)
+- `API_SHOW_INTERMEDIATE_RESULTS` (bool)
 
-```env
-API_BASE_URL=http://localhost:5155
-API_SEARCH_PATH=/hybrid-search/search
-API_STATUS_PATH=/hybrid-search/info/{task_id}
-API_TOP_K=10
-TOP_K=10
-API_SEARCH_USE_CACHE=false
-API_METRICS_ENABLE=true
-API_SHOW_INTERMEDIATE_RESULTS=true
-RESULTS_PATH=info.results
-METRICS_PATH=info.metrics
-INTERMEDIATE_RESULTS_PATH=info.intermediate_results
-RESULT_ID_FIELD=ext_id
-MARGIN_SCORE_FIELD=
-```
+Bool-значения: `true/false`, `1/0`, `yes/no`, `y/n`, `on/off`.
 
-Если `MARGIN_SCORE_FIELD` пустой, скрипт сам пробует поля `final_score`, `score_final`, `score_ce`, `score_fusion`, `score_dense`, `score_lex`.
+Presearch:
+- `API_PRESEARCH_ENABLED`
+- `API_PRESEARCH_FIELD`
+- `API_PRESEARCH_JSON` (имеет приоритет)
 
-## Quality benchmark
+Пример:
+- `API_PRESEARCH_ENABLED=true`
+- `API_PRESEARCH_FIELD=question`
 
-Минимальный набор колонок Excel:
+=> `"presearch": {"field": "question"}`
 
-```env
-TEST_DATA_PATH=test_data.xlsx
-COL_QUERY=test_query
-COL_TARGET_ID=target_id
-COL_SOURCE=source
-COL_QUERY_SOURCE=test_query_source
-COL_ANSWER=test_answer
-METRICS_KS=1,3,5,10
-OUTPUT_BASENAME=bench_results_current
-```
+Filters:
+- Array filters:
+  - `API_FILTER_ARRAY_ROLE`
+  - `API_FILTER_ARRAY_PRODUCT`
+  - `API_FILTER_ARRAY_COMPONENT`
+- Exact filters:
+  - `API_FILTER_EXACT_SOURCE`
+  - `API_FILTER_EXACT_ACTUAL`
+  - `API_FILTER_EXACT_SECOND_LINE`
+- `API_FILTERS_JSON` (имеет приоритет)
 
-Запуск:
+Списки для array filters задаются через `,` или `;`.
 
-```bash
-python -m quality.quality_bench_current
-```
+Если `presearch`/`filters` пустые, они не добавляются в payload.
 
-Результат: JSON и XLSX с `recall@k`, `MRR@k`, `nDCG@k`, рангами, task_id и временем ответа.
+## Дефолты по сценариям
 
-## Metrics benchmark
+- `metrics.metrics_bench`:
+  - `API_METRICS_ENABLE=true`
+  - `API_SHOW_INTERMEDIATE_RESULTS=false`
+  - `API_SEARCH_USE_CACHE=false`
+- `quality.quality_bench`:
+  - `API_METRICS_ENABLE=true`
+  - `API_SHOW_INTERMEDIATE_RESULTS=true`
+  - `API_SEARCH_USE_CACHE=false`
 
-Можно прогнать один запрос несколько раз:
+Любая явно заданная env-переменная переопределяет дефолт скрипта.
 
-```env
-TEST_QUERY=тестовый запрос
-TEST_QUERY_RETRY_COUNT=20
-```
+## Пути в TaskResponse
 
-Или взять запросы из Excel/Parquet:
+По умолчанию используются dotted-path:
+- `RESULTS_PATH=info.results`
+- `METRICS_PATH=info.metrics`
+- `INTERMEDIATE_RESULTS_PATH=info.intermediate_results`
 
-```env
-SOURCE_FILE=test_data.xlsx
-SOURCE_FILE_QUERY_FIELD=test_query
-```
-
-Запуск:
-
-```bash
-python -m metrics.metrics_bench_current
-```
-
-Результат: JSON с полными ответами API и агрегатами по `response_time`, `total_time`, `embedding_time`, `vector_search_time`, `lexical_search_time`, `cross_encoder_time`.
-
-## Фильтры и presearch
-
-Передаются как JSON-строки:
-
-```env
-API_PRESEARCH_JSON={"field":"question"}
-API_FILTERS_JSON={"array_filters":{"role":["Врач"]},"exact_filters":{"source":"kb"}}
-```
-
-Формат полностью повторяет `SearchRequest` текущего `aisearch`.
+Сохраняется поддержка fallback score-полей:
+`final_score`, `score_final`, `score_ce`, `score_fusion`, `score_dense`, `score_lex`.
