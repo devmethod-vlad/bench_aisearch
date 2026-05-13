@@ -30,6 +30,12 @@ class ApiConfig:
     status_path_template: str
     top_k: int
 
+    # Runtime-параметры POST /search
+    search_use_cache: bool
+    metrics_enable: bool
+    show_intermediate_results: bool
+    presearch_field: Optional[str]
+
     # Параметры API постановки в очередь
     search_timeout: float
     search_status_field: str
@@ -175,6 +181,11 @@ def build_config() -> ApiConfig:
 
     top_k = _get_env_int("API_TOP_K", 10)
 
+    search_use_cache = _get_env_bool("API_SEARCH_USE_CACHE", False)
+    metrics_enable = _get_env_bool("API_SEARCH_METRICS_ENABLE", True)
+    show_intermediate_results = _get_env_bool("API_SHOW_INTERMEDIATE_RESULTS", False)
+    presearch_field = _get_env_str("API_PRESEARCH_FIELD", None)
+
     # Параметры постановки в очередь
     search_timeout = _get_env_float("API_SEARCH_TIMEOUT", 60.0)
     search_status_field = _get_env_str("API_SEARCH_STATUS_FIELD", "status") or "status"
@@ -246,6 +257,10 @@ def build_config() -> ApiConfig:
         search_path=search_path,
         status_path_template=status_path_template,
         top_k=top_k,
+        search_use_cache=search_use_cache,
+        metrics_enable=metrics_enable,
+        show_intermediate_results=show_intermediate_results,
+        presearch_field=presearch_field,
         search_timeout=search_timeout,
         search_status_field=search_status_field,
         search_status_ok_value=search_status_ok_value,
@@ -296,7 +311,15 @@ def queue_search_task(query: str, cfg: ApiConfig, console: Console) -> Tuple[str
     """POST на ручку постановки задачи в очередь + учёт ретраев 423/429."""
 
     url = cfg.base_url + cfg.search_path
-    payload = {"query": query, "top_k": cfg.top_k}
+    payload = {
+        "query": query,
+        "top_k": cfg.top_k,
+        "search_use_cache": cfg.search_use_cache,
+        "metrics_enable": cfg.metrics_enable,
+        "show_intermediate_results": cfg.show_intermediate_results,
+    }
+    if cfg.presearch_field:
+        payload["presearch"] = {"field": cfg.presearch_field}
 
     queue_stage_start = time.perf_counter()
 
