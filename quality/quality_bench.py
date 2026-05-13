@@ -80,6 +80,21 @@ def sanitize_sheet_name(name: str) -> str:
     return name or "source_unknown"
 
 
+
+
+def parse_bool_env(name: str, default: bool) -> bool:
+    """Парсинг bool env: поддерживает 1/0, true/false, yes/no, y/n, on/off."""
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    v = raw.strip().lower()
+    if v in ("1", "true", "yes", "y", "on"):
+        return True
+    if v in ("0", "false", "no", "n", "off"):
+        return False
+    return default
+
+
 def parse_int_list(s: str, default_vals):
     """Парсинг списка чисел из строки env ('1,3,5,10'). Если не получилось - вернём дефолт."""
     try:
@@ -385,6 +400,10 @@ def main():
     api_info_url = os.getenv("API_INFO_URL", "/hybrid-search/info/")
     API_INFO_INTERVAL = float(os.getenv("API_INFO_INTERVAL", "0.5"))
     API_INFO_MAX_TIME = float(os.getenv("API_INFO_MAX_TIME", "60"))
+    search_use_cache = parse_bool_env("SEARCH_USE_CACHE", False)
+    metrics_enable = parse_bool_env("METRICS_ENABLE", True)
+    show_intermediate_results = parse_bool_env("SHOW_INTERMEDIATE_RESULTS", True)
+    presearch_field = (os.getenv("PRESEARCH_FIELD", "") or "").strip()
 
     # Доп. тестовые поля
     col_query_source = os.getenv("COL_QUERY_SOURCE", "test_query_source")
@@ -490,7 +509,7 @@ def main():
             "found_ranks": [], "margins": [], "top1_correct": []
         }
 
-    stage_names = ["dense", "lex", "ce"]
+    stage_names = ["dense", "lex", "fusion", "ce"]
     intermediate_stats = {name: {"overall": make_stage_agg(), "by_source": {}} for name in stage_names}
 
     # ------------------- Параметры прогона (из API, один раз) ----------------
@@ -498,7 +517,10 @@ def main():
         "encoder_model": None, "reranker_model": None,
         "reranker_enabled": None, "bm25_enabled": None, "open_search_enabled": None,
         "hybrid_w_ce": None, "hybrid_w_dense": None, "hybrid_w_lex": None,
-        "hybrid_dense_top_k": None, "hybrid_lex_top_k": None, "hybrid_top_k": None
+        "hybrid_dense_top_k": None, "hybrid_lex_top_k": None, "hybrid_top_k": None,
+        "hybrid_fusion_mode": None, "hybrid_rrf_k": None, "short_mode_applied": None,
+        "hybrid_score_final_mode": None, "from_cache": None, "search_use_cache": None,
+        "show_intermediate_results": None, "presearch_enabled": None, "presearch_field": None
     }
 
     def _maybe_set_run_param(norm_key, value):
@@ -534,7 +556,16 @@ def main():
             # --- /hybrid-search/search ---
             search_url = f"{api_base_url.rstrip('/')}{api_search_url}"
             try:
-                resp = requests.post(search_url, json={"query": user_query, "top_k": top_k})
+                payload = {
+                    "query": user_query,
+                    "top_k": top_k,
+                    "search_use_cache": search_use_cache,
+                    "metrics_enable": metrics_enable,
+                    "show_intermediate_results": show_intermediate_results,
+                }
+                if presearch_field:
+                    payload["presearch"] = {"field": presearch_field}
+                resp = requests.post(search_url, json=payload)
             except Exception as e:
                 pbar.clear()
                 print(f"Ошибка при выполнении /search для запроса '{user_query}': {e}")
@@ -686,6 +717,15 @@ def main():
             _maybe_set_run_param("hybrid_dense_top_k",   _extract_api_field(metrics_data, HYBRID_DENSE_TOP_K_FIELD))
             _maybe_set_run_param("hybrid_lex_top_k",     _extract_api_field(metrics_data, HYBRID_LEX_TOP_K_FIELD))
             _maybe_set_run_param("hybrid_top_k",         _extract_api_field(metrics_data, HYBRID_TOP_K_FIELD))
+            _maybe_set_run_param("hybrid_fusion_mode",   _extract_api_field(metrics_data, "hybrid_fusion_mode"))
+            _maybe_set_run_param("hybrid_rrf_k",         _extract_api_field(metrics_data, "hybrid_rrf_k"))
+            _maybe_set_run_param("short_mode_applied",   _extract_api_field(metrics_data, "short_mode_applied"))
+            _maybe_set_run_param("hybrid_score_final_mode", _extract_api_field(metrics_data, "hybrid_score_final_mode"))
+            _maybe_set_run_param("from_cache",           _extract_api_field(metrics_data, "from_cache"))
+            _maybe_set_run_param("search_use_cache",     _extract_api_field(metrics_data, "search_use_cache"))
+            _maybe_set_run_param("show_intermediate_results", _extract_api_field(metrics_data, "show_intermediate_results"))
+            _maybe_set_run_param("presearch_enabled",    _extract_api_field(metrics_data, "presearch_enabled"))
+            _maybe_set_run_param("presearch_field",      _extract_api_field(metrics_data, "presearch_field"))
 
             # --- попадание ожидаемого ID (финальная выдача) ---
             found_rank = None
